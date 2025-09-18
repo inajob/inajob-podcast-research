@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Podcast Transcript Analyzer</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>#inajob の試しに録音してみた</h1>
+        </header>
+        <main class="content-wrapper">
+            <nav id="episode-list-container">
+                <h2>Episodes</h2>
+                <ul id="episode-list"></ul>
+            </nav>
+            <article id="main-content-container">
+                <div id="episode-grid-container">
+                    <h3>Related Episodes Grid</h3>
+                    <p class="selected-keyword-display">Selected Keyword: <span id="selected-keyword">None</span></p>
+                    <div id="episode-grid"></div>
+                </div>
+
+                <div id="view-switcher">
+                    <button id="show-episode-view" class="active">Episode Detail</button>
+                    <button id="show-keywords-view">All Keywords</button>
+                    <button id="show-search-view">Search Results</button>
+                </div>
+
+                <div id="episode-view">
+                    <h2 id="episode-title"></h2>
+                    <div id="keyword-container"></div>
+                    <div id="transcript-content">
+                        <p>Select an episode from the list to view its transcript.</p>
+                    </div>
+                </div>
+
+                <div id="keywords-view" class="hidden">
+                    <!-- Global keyword list will be rendered here -->
+                </div>
+
+                <div id="search-view" class="hidden">
+                    <div class="free-text-search-container">
+                        <input type="text" id="free-text-search-input" placeholder="Search all transcripts...">
+                    </div>
+                    <div id="free-text-search-results"></div>
+                </div>
+
+            </article>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,247 @@
+body {
+    font-family: sans-serif;
+    line-height: 1.6;
+    margin: 0;
+    background-color: #f4f4f4;
+    color: #333;
+}
+
+.hidden {
+    display: none !important;
+}
+
+.container {
+    max-width: 1200px;
+    margin: auto;
+    overflow: hidden;
+    padding: 0 20px;
+}
+
+header h1 {
+    text-align: center;
+    color: #333;
+}
+
+.content-wrapper {
+    display: grid;
+    grid-template-columns: 1fr 3fr;
+    gap: 20px;
+}
+
+#episode-list-container {
+    background: #fff;
+    padding: 15px;
+    border-radius: 5px;
+    box-shadow: 0 0 5px rgba(0,0,0,0.1);
+    height: 80vh;
+    overflow-y: auto;
+}
+
+#episode-list {
+    list-style: none;
+    padding: 0;
+}
+
+#episode-list li {
+    padding: 8px;
+    margin-bottom: 5px;
+    background: #f0f0f0;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+    font-size: 0.9em;
+}
+
+#episode-list li:hover {
+    background: #e0e0e0;
+}
+
+#episode-list li.active {
+    background: #007bff;
+    color: white;
+}
+
+#episode-list li.related {
+    border-left: 4px solid #28a745;
+}
+
+#main-content-container {
+    background: #fff;
+    padding: 20px;
+    border-radius: 5px;
+    box-shadow: 0 0 5px rgba(0,0,0,0.1);
+    height: 80vh;
+    overflow-y: auto;
+}
+
+#view-switcher {
+    margin-bottom: 15px;
+    border-bottom: 1px solid #ccc;
+    padding-bottom: 10px;
+}
+
+#view-switcher button {
+    padding: 8px 15px;
+    border: 1px solid transparent;
+    background-color: #f0f0f0;
+    cursor: pointer;
+    font-size: 1em;
+}
+
+#view-switcher button:disabled {
+    color: #aaa;
+    cursor: not-allowed;
+}
+
+#view-switcher button.active {
+    background-color: #fff;
+    border-color: #ccc;
+    border-bottom-color: #fff;
+    margin-bottom: -11px;
+}
+
+#episode-grid-container {
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #eee;
+}
+
+.selected-keyword-display {
+    margin-top: 0;
+}
+
+#episode-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.grid-cell {
+    width: 35px;
+    height: 25px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-color: #f0f0f0;
+    border-radius: 3px;
+    font-size: 0.8em;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+.grid-cell:hover {
+    background-color: #e0e0e0;
+}
+
+.grid-cell.highlight {
+    background-color: #28a745;
+    color: white;
+}
+
+.grid-cell.active {
+    background-color: #007bff;
+    color: white;
+}
+
+#keywords-view {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+#keyword-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-bottom: 15px; /* Add some bottom margin for spacing */
+}
+
+.keyword {
+    color: #fff;
+    padding: 5px 10px;
+    margin: 5px 5px 5px 0;
+    border-radius: 15px;
+    cursor: pointer;
+    transition: filter 0.2s, box-shadow 0.2s;
+    display: inline-block;
+}
+
+.keyword:hover {
+    filter: brightness(85%);
+}
+
+.keyword.selected {
+    box-shadow: 0 0 0 2px #0056b3;
+    filter: brightness(85%);
+}
+
+.keyword.json-source-keyword {
+    border: 2px solid #ffc107; /* Example: yellow border */
+}
+
+#transcript-content {
+    white-space: pre-wrap;
+    background: #fdfdfd;
+    padding: 15px;
+    border: 1px solid #eee;
+    border-radius: 4px;
+}
+
+#search-view .result-item {
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #eee;
+}
+
+#search-view .result-item .episode-title {
+    font-weight: bold;
+    color: #555;
+    margin-bottom: 5px;
+}
+
+#search-view .result-item .line-content {
+    padding-left: 10px;
+    border-left: 3px solid #ddd;
+}
+
+.highlight-text {
+    background-color: #fff3cd;
+    color: #664d03;
+    font-weight: bold;
+}
+
+.free-text-search-container {
+    margin-bottom: 15px;
+}
+
+#free-text-search-input {
+    width: calc(100% - 20px);
+    padding: 8px 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 1em;
+}
+
+.transcript-keyword {
+    text-decoration: underline;
+    cursor: pointer;
+    background-color: #e9ecef;
+    border-radius: 3px;
+    padding: 0 2px;
+}
+
+.transcript-keyword:hover {
+    background-color: #ced4da;
+}
+
+#transcript-tooltip {
+    position: absolute;
+    background-color: #333;
+    color: white;
+    padding: 8px;
+    border-radius: 4px;
+    font-size: 0.9em;
+    z-index: 1000;
+    max-width: 300px;
+    pointer-events: none; /* So the tooltip itself doesn't block mouse events */
+}
