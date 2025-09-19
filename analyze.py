@@ -1,3 +1,4 @@
+
 import json
 import glob
 import os
@@ -63,7 +64,7 @@ for filename, data in transcripts_data.items():
         tokens = list(t.tokenize(data['content']))
         
         serializable_tokens = [
-            {'surface': token.surface, 'part_of_speech': token.part_of_speech}
+            {'surface': token.surface, 'part_of_speech': token.part_of_speech, 'infl_form': token.infl_form}
             for token in tokens
         ]
         
@@ -123,6 +124,11 @@ modifier_noun_phrases = set()
 verb_nominalization_phrases = set()
 prefix_noun_phrases = set()
 
+# Counters for verb-related patterns
+pattern_e_count = 0
+pattern_f_count = 0
+pattern_g_count = 0
+
 for filename, tokens in all_tokens.items():
     # Comprehensive Noun Phrase Extraction (replaces Pattern A and B logic)
     current_phrase_tokens = []
@@ -134,7 +140,9 @@ for filename, tokens in all_tokens.items():
         # --- Conditions to continue the phrase ---
         is_noun = (pos_main == '名詞')
         is_particle_no = (token['surface'] == 'の' and pos_full.startswith('助詞,連体化') and len(current_phrase_tokens) > 0)
-        
+        is_particle_toiu = (token['surface'] == 'という' and pos_main == '助詞' and len(current_phrase_tokens) > 0)
+        is_prefix = (pos_main == '接頭詞')
+
         is_aux_na_connective = False
         if len(current_phrase_tokens) > 0 and token['surface'] == 'な' and pos_full.startswith('助動詞'):
             pos_list = pos_full.split(',')
@@ -144,9 +152,8 @@ for filename, tokens in all_tokens.items():
             else:
                 is_aux_na_connective = True
 
-        if is_noun or is_particle_no or is_aux_na_connective:
-            # Don't start a phrase with a non-independent noun (e.g. 'ような人')
-            if len(current_phrase_tokens) == 0 and is_noun and pos_sub == '非自立':
+        if is_noun or is_particle_no or is_aux_na_connective or is_particle_toiu or is_prefix:
+            if len(current_phrase_tokens) == 0 and is_noun and (pos_sub == '非自立' or token['surface'] == '名'):
                 pass
             else:
                 current_phrase_tokens.append(token['surface'])
@@ -156,15 +163,16 @@ for filename, tokens in all_tokens.items():
                         proper_noun_keywords.add(surface)
         else:
             if len(current_phrase_tokens) >= 2:
-                if current_phrase_tokens[-1] not in ['の', 'な']:
+                if current_phrase_tokens[-1] not in ['の', 'な', 'という']:
                     extracted_noun_phrases.add("".join(current_phrase_tokens))
             current_phrase_tokens = []
 
     if len(current_phrase_tokens) >= 2:
-        if current_phrase_tokens[-1] not in ['の', 'な']:
+        if current_phrase_tokens[-1] not in ['の', 'な', 'という']:
             extracted_noun_phrases.add("".join(current_phrase_tokens))
 
     # Patterns C, D, E, F, G, H
+    debug_print_count = 0
     for i in range(len(tokens) - 2):
         t1, t2, t3 = tokens[i], tokens[i+1], tokens[i+2]
         pos1 = t1['part_of_speech'].split(',')[0]
@@ -176,15 +184,23 @@ for filename, tokens in all_tokens.items():
         t1, t2 = tokens[i], tokens[i+1]
         pos1 = t1['part_of_speech'].split(',')[0]
         pos2 = t2['part_of_speech'].split(',')[0]
-        pos1_conj_form = t1['part_of_speech'].split(',')[4] if len(t1['part_of_speech'].split(',')) > 4 else ''
+        pos1_conj_form = t1['infl_form']
 
         if pos1 == '形容詞' and pos2 == '名詞':
             modifier_noun_phrases.add(t1['surface'] + t2['surface'])
         if pos1 == '連体詞' and pos2 == '名詞':
-            modifier_noun_phrases.add(t1['surface'] + t2['surface'])
-        if (pos1 == '動詞' and pos1_conj_form == '終止形' and pos2 == '名詞' and (t2['surface'] == 'こと' or t2['surface'] == 'もの')):
+            if t1['surface'] not in ['この', 'その', 'あの', 'どの', 'こんな', 'そんな', 'あんな', 'どんな', 'こういう', 'そういう', 'ああいう', 'どういう']:
+                modifier_noun_phrases.add(t1['surface'] + t2['surface'])
+        if (pos1 == '動詞' and pos1_conj_form == '基本形' and pos2 == '名詞'):
+            # ただし、終止形 + 「こと」「もの」の組み合わせは verb_nominalization_phrases で処理するので除外
+            if not (pos1_conj_form == '終止形' and (t2['surface'] == 'こと' or t2['surface'] == 'もの')):
+                pattern_e_count += 1
+                modifier_noun_phrases.add(t1['surface'] + t2['surface'])
+        if (pos1 == '動詞' and pos1_conj_form == '基本形' and pos2 == '名詞' and (t2['surface'] == 'こと' or t2['surface'] == 'もの')):
+            pattern_f_count += 1
             verb_nominalization_phrases.add(t1['surface'] + t2['surface'])
         if (pos1 == '動詞' and pos1_conj_form == '連用形' and pos2 == '名詞' and t2['surface'] == '方'):
+            pattern_g_count += 1
             verb_nominalization_phrases.add(t1['surface'] + t2['surface'])
         if pos1 == '接頭詞' and pos2 == '名詞':
             prefix_noun_phrases.add(t1['surface'] + t2['surface'])
@@ -194,6 +210,9 @@ print(f"Extracted {len(extracted_noun_phrases)} unique noun phrases (Patterns A,
 print(f"Extracted {len(modifier_noun_phrases)} modifier-noun phrases (Patterns C,D,E).")
 print(f"Extracted {len(verb_nominalization_phrases)} verb nominalization phrases (Patterns F,G).")
 print(f"Extracted {len(prefix_noun_phrases)} prefix-noun phrases (Pattern H).")
+print(f"  - 動詞+名詞 (E): {pattern_e_count} keywords")
+print(f"  - 動詞+こと/もの (F): {pattern_f_count} keywords")
+print(f"  - 動詞+方 (G): {pattern_g_count} keywords")
 
 # 4. Combine all keyword sources
 all_keywords = json_keywords.union(katakana_keywords).union(english_keywords).union(proper_noun_keywords).union(extracted_noun_phrases).union(modifier_noun_phrases).union(verb_nominalization_phrases).union(prefix_noun_phrases)
