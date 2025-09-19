@@ -1,4 +1,3 @@
-
 import json
 import glob
 import os
@@ -172,7 +171,6 @@ for filename, tokens in all_tokens.items():
             extracted_noun_phrases.add("".join(current_phrase_tokens))
 
     # Patterns C, D, E, F, G, H
-    debug_print_count = 0
     for i in range(len(tokens) - 2):
         t1, t2, t3 = tokens[i], tokens[i+1], tokens[i+2]
         pos1 = t1['part_of_speech'].split(',')[0]
@@ -214,11 +212,128 @@ print(f"  - 動詞+名詞 (E): {pattern_e_count} keywords")
 print(f"  - 動詞+こと/もの (F): {pattern_f_count} keywords")
 print(f"  - 動詞+方 (G): {pattern_g_count} keywords")
 
+# --- New: Long Phrase Extraction ---
+print("Extracting long phrases based on modifier + verb patterns...")
+long_phrases = set()
+for filename, tokens in all_tokens.items():
+    i = 0
+    while i < len(tokens):
+        # --- Step 1: Find Modifier Phrase ---
+        modifier_tokens = []
+        j = i
+        while j < len(tokens):
+            pos_main = tokens[j]['part_of_speech'].split(',')[0]
+            
+            is_adverb = (pos_main == '副詞')
+            
+            is_adjectival_verb = False
+            if pos_main == '形容動詞' and j + 1 < len(tokens) and tokens[j+1]['surface'] == 'に':
+                is_adjectival_verb = True
+
+            if is_adverb:
+                modifier_tokens.append(tokens[j])
+                j += 1
+            elif is_adjectival_verb:
+                modifier_tokens.append(tokens[j])
+                modifier_tokens.append(tokens[j+1])
+                j += 2
+            else:
+                break
+        
+        modifier_phrase = "".join([t['surface'] for t in modifier_tokens])
+        
+        # --- Step 2: Find Body Phrase ---
+        body_tokens = []
+        k = j
+        # Starts with a verb in its base form
+        if k < len(tokens):
+            pos_main_k = tokens[k]['part_of_speech'].split(',')[0]
+            infl_form_k = tokens[k]['infl_form']
+            
+            if pos_main_k == '動詞' and infl_form_k == '基本形':
+                body_tokens.append(tokens[k])
+                k += 1
+                
+                # Continue with nouns, adjectives, or 'の' particles
+                while k < len(tokens):
+                    pos_main_k_cont = tokens[k]['part_of_speech'].split(',')[0]
+                    surface_k_cont = tokens[k]['surface']
+                    
+                    is_noun = (pos_main_k_cont == '名詞')
+                    is_adjective = (pos_main_k_cont == '形容詞')
+                    is_particle_no = (surface_k_cont == 'の' and pos_main_k_cont == '助詞')
+
+                    if is_noun or is_adjective or is_particle_no:
+                        body_tokens.append(tokens[k])
+                        k += 1
+                    else:
+                        break
+        
+        body_phrase = "".join([t['surface'] for t in body_tokens])
+
+        # --- Step 3: Combine and Add to Set ---
+        if body_phrase:
+            # Add the body phrase itself (e.g., "話すこと")
+            if len(body_tokens) >= 2:
+                long_phrases.add(body_phrase)
+
+            # Add the combined phrase if a modifier exists (e.g., "ゆっくり話すこと")
+            if modifier_phrase and len(modifier_tokens) + len(body_tokens) >= 3:
+                 long_phrases.add(modifier_phrase + body_phrase)
+        
+        # Move the main index 'i' forward
+        if k > i:
+            i = k
+        else:
+            i += 1
+
+print(f"Extracted {len(long_phrases)} new long phrases.")
+
+# --- New: Parallel Structure Extraction ---
+print("Extracting parallel phrases...")
+parallel_phrases = set()
+for filename, tokens in all_tokens.items():
+    parallel_particles = {'と', 'や', 'か'}
+    max_window_size = 3  # 最大で前後3トークンまで比較
+
+    for i in range(1, len(tokens) - 1):
+        token = tokens[i]
+        
+        if token['surface'] in parallel_particles:
+            for window_size in range(1, max_window_size + 1):
+                if i - window_size < 0 or i + window_size >= len(tokens):
+                    continue
+
+                phrase_a_tokens = tokens[i-window_size : i]
+                phrase_b_tokens = tokens[i+1 : i+1+window_size]
+
+                if not phrase_a_tokens or not phrase_b_tokens:
+                    continue
+
+                pos_pattern_a = [t['part_of_speech'].split(',')[0] for t in phrase_a_tokens]
+                pos_pattern_b = [t['part_of_speech'].split(',')[0] for t in phrase_b_tokens]
+
+                if pos_pattern_a == pos_pattern_b:
+                    if phrase_a_tokens[0]['part_of_speech'].split(',')[0] in ['助詞', '助動詞', '記号'] or \
+                       phrase_b_tokens[0]['part_of_speech'].split(',')[0] in ['助詞', '助動詞', '記号']:
+                        continue
+
+                    surface_a = "".join([t['surface'] for t in phrase_a_tokens])
+                    surface_b = "".join([t['surface'] for t in phrase_b_tokens])
+                    
+                    combined_phrase = surface_a + token['surface'] + surface_b
+                    
+                    if len(combined_phrase) > 3:
+                        parallel_phrases.add(combined_phrase)
+
+print(f"Extracted {len(parallel_phrases)} new parallel phrases.")
+
+
 # 4. Combine all keyword sources
-all_keywords = json_keywords.union(katakana_keywords).union(english_keywords).union(proper_noun_keywords).union(extracted_noun_phrases).union(modifier_noun_phrases).union(verb_nominalization_phrases).union(prefix_noun_phrases)
+all_keywords = json_keywords.union(katakana_keywords).union(english_keywords).union(proper_noun_keywords).union(extracted_noun_phrases).union(modifier_noun_phrases).union(verb_nominalization_phrases).union(prefix_noun_phrases).union(long_phrases).union(parallel_phrases)
 print(f"Total unique keyword candidates: {len(all_keywords)}")
 
-# --- Filtering and Mapping --- 
+# --- Filtering and Mapping ---
 print("Filtering and mapping keywords...")
 start_time = time.time()
 
@@ -245,7 +360,7 @@ else:
 end_time = time.time()
 print(f"Finished mapping. Duration: {end_time - start_time:.2f} seconds")
 
-# --- New Filter Order --- 
+# --- New Filter Order ---
 
 # 1. --- Final Filtering by Episode Count (run first) ---
 total_episode_count = len(transcripts_data)
