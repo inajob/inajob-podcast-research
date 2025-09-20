@@ -14,6 +14,108 @@ keywords_file = "keywords.json"
 output_dir = "public"
 cache_file = "janome_cache.json"
 
+
+class ShiftReduceParser:
+    def __init__(self, debug_mode=False):
+        """
+        文法ルールを初期化する。
+        ルールは (左辺の記号, [右辺の記号のリスト]) のタプルで定義。
+        ルールの順序が重要。長いルールや優先度の高いルールを先に書く。
+        """
+        self.rules = [
+            # --- 名詞句 (NP) を生成するルール ---
+            ('NP', ['NP', 'P_attr', 'NP']),   # Rule A
+            ('NP', ['VP', 'NP']),             # Rule G/H
+            ('NP', ['MOD', 'NP']),            # Rule B
+            ('NP', ['NP', 'P_para', 'NP']),   # Rule E
+
+            # --- 動詞句 (VP) を生成するルール ---
+            ('VP', ['NP', 'P_obj', 'VP']),   # Rule C
+            ('VP', ['VP', 'P_conn', 'VP']),   # Rule I
+            ('VP', ['MOD', 'VP']),            # Rule B
+            ('VP', ['NP', 'P_subj', 'VP']),   # Rule D
+
+            # --- 形容詞句 (ADJP) を生成するルール ---
+            ('ADJP', ['NP', 'P_subj', 'ADJP']), # Rule D
+            ('ADJP', ['MOD', 'ADJP']),          # Rule B
+
+            # --- 節 (Clause) を生成するルール ---
+            ('Clause', ['ADJP', 'P_reason', 'VP']), # Rule F (代表例)
+        ]
+        self.debug_mode = debug_mode
+
+    def _find_rule_match(self, stack):
+        """
+        スタックの末尾が、いずれかのルールの右辺にマッチするかどうかをチェックする。
+        マッチすれば、そのルールとマッチした長さを返す。
+        """
+        for lhs, rhs in self.rules:
+            rhs_len = len(rhs)
+            if len(stack) >= rhs_len:
+                stack_end_pos = [chunk['pos'] for chunk in stack[-rhs_len:]]
+                if stack_end_pos == rhs:
+                    return (lhs, rhs), rhs_len
+        return None, 0
+
+    def parse(self, chunks):
+        """
+        シフトリデュース構文解析を実行する。
+        """
+        stack = []
+        queue = list(chunks)
+
+        if self.debug_mode:
+            print(f"--- 解析開始 ---")
+            print(f"入力キュー: {[c['surface'] for c in queue]}")
+
+        while queue or len(stack) > 1:
+            reduced_in_pass = False
+            while True:
+                rule, rhs_len = self._find_rule_match(stack)
+                if rule:
+                    lhs, rhs = rule
+                    target_chunks = stack[-rhs_len:]
+                    combined_surface = "".join([c['surface'] for c in target_chunks])
+                    
+                    if self.debug_mode:
+                        print(f"リデュース実行: {' '.join([c['surface'] for c in target_chunks])}  ->  {lhs}('{combined_surface}')")
+
+                    stack = stack[:-rhs_len]
+                    new_chunk = {'pos': lhs, 'surface': combined_surface, 'from': rhs, 'children': target_chunks}
+                    stack.append(new_chunk)
+                    reduced_in_pass = True
+                else:
+                    break
+            
+            if queue:
+                chunk_to_shift = queue.pop(0)
+                if self.debug_mode:
+                    print(f"シフト: '{chunk_to_shift['surface']}' ({chunk_to_shift['pos']})")
+                stack.append(chunk_to_shift)
+            
+            elif not reduced_in_pass and len(stack) > 1:
+                if self.debug_mode:
+                    print(f"解析失敗: キューが空ですが、スタックを1つの句にリデュースできません。")
+                    print(f"最終スタック: {json.dumps(stack, indent=2, ensure_ascii=False)}")
+                return stack
+
+        if self.debug_mode:
+            print(f"--- 解析完了 ---")
+        return stack
+
+    def _collect_chunks_from_tree(self, root_chunk):
+        """
+        解析結果の木構造を再帰的に辿り、すべての中間生成物を含むチャンクをリストで返す。
+        """
+        if not root_chunk:
+            return []
+        
+        collected = [root_chunk]
+        if 'children' in root_chunk:
+            for child in root_chunk['children']:
+                collected.extend(self._collect_chunks_from_tree(child))
+        return collected
+
 # --- Caching Setup ---
 try:
     with open(cache_file, 'r', encoding='utf-8') as f:
@@ -51,7 +153,7 @@ t = Tokenizer()
 all_tokens = {}
 needs_cache_update = False
 
-print("Tokenizing transcripts (using cache where possible)...")
+print("Tokenizing transcripts (using cache possible)...")
 for filename, data in transcripts_data.items():
     filepath = data['filepath']
     mtime = os.path.getmtime(filepath)
@@ -79,23 +181,21 @@ if needs_cache_update:
     with open(cache_file, 'w', encoding='utf-8') as f:
         json.dump(cache_data, f, ensure_ascii=False)
 
-# --- Keyword Gathering (Refactored) ---
-print("Gathering keyword candidates using chunking method...")
-
 def create_base_chunks(tokens):
     chunks = []
     i = 0
     while i < len(tokens):
         token = tokens[i]
-        pos = token['part_of_speech'].split(',')[0]
+        pos_major = token['part_of_speech'].split(',')[0]
+        pos_minor = token['part_of_speech'].split(',')[1]
 
-        # Rule 1: Noun Phrases (including prefixes)
-        if pos == '接頭詞' or pos == '名詞':
+        # Rule 1: Noun Phrases (NP)
+        if pos_major == '接頭詞' or pos_major == '名詞':
             j = i
             chunk_tokens = []
             while j < len(tokens):
-                current_pos = tokens[j]['part_of_speech'].split(',')[0]
-                if current_pos == '名詞' or current_pos == '接頭詞':
+                current_pos_major = tokens[j]['part_of_speech'].split(',')[0]
+                if current_pos_major == '名詞' or current_pos_major == '接頭詞':
                     chunk_tokens.append(tokens[j])
                     j += 1
                 else:
@@ -104,29 +204,19 @@ def create_base_chunks(tokens):
                 chunks.append({
                     'surface': "".join([t['surface'] for t in chunk_tokens]),
                     'tokens': chunk_tokens,
-                    'pos': '名詞句' if len(chunk_tokens) > 1 or chunk_tokens[0]['part_of_speech'].split(',')[0] == '接頭詞' else '名詞'
+                    'pos': 'NP'
                 })
                 i = j
                 continue
 
-        # Rule 2: Adjective/Adverbial Phrases
-        if pos in ['形容詞', '連体詞', '副詞', '形容動詞']:
-            chunks.append({
-                'surface': token['surface'],
-                'tokens': [token],
-                'pos': pos
-            })
-            i += 1
-            continue
-
-        # Rule 3: Verb Phrases (verb + auxiliary verbs)
-        if pos == '動詞':
+        # Rule 2: Verb Phrases (VP)
+        if pos_major == '動詞':
             j = i
             chunk_tokens = [tokens[j]]
             j += 1
             while j < len(tokens):
-                current_pos = tokens[j]['part_of_speech'].split(',')[0]
-                if current_pos == '助動詞':
+                current_pos_major = tokens[j]['part_of_speech'].split(',')[0]
+                if current_pos_major == '助動詞':
                     chunk_tokens.append(tokens[j])
                     j += 1
                 else:
@@ -134,215 +224,59 @@ def create_base_chunks(tokens):
             chunks.append({
                 'surface': "".join([t['surface'] for t in chunk_tokens]),
                 'tokens': chunk_tokens,
-                'pos': '動詞句'
+                'pos': 'VP'
             })
             i = j
             continue
 
-        # If no rule matches, add token as a miscellaneous chunk
+        # Rule 3: Adjective Phrases (ADJP) & Modifiers (MOD)
+        if pos_major in ['形容詞', '形容動詞', '副詞', '連体詞']:
+            pos_map = {
+                '形容詞': 'ADJP',
+                '形容動詞': 'ADJP',
+                '副詞': 'MOD',
+                '連体詞': 'MOD'
+            }
+            chunks.append({
+                'surface': token['surface'],
+                'tokens': [token],
+                'pos': pos_map.get(pos_major)
+            })
+            i += 1
+            continue
+
+        # Rule 4: Particles (P_*)
+        if pos_major == '助詞':
+            new_pos = 'P' # Default Particle
+            surface = token['surface']
+            if pos_minor == '連体化':
+                new_pos = 'P_attr'
+            elif pos_minor == '格助詞' and surface == 'を':
+                new_pos = 'P_obj'
+            elif (pos_minor == '格助詞' or pos_minor == '係助詞') and surface in ['が', 'は']:
+                new_pos = 'P_subj'
+            elif pos_minor == '接続助詞':
+                new_pos = 'P_conn'
+            elif pos_minor == '並立助詞':
+                new_pos = 'P_para'
+            elif surface in ['ので', 'から']:
+                new_pos = 'P_reason'
+            
+            chunks.append({
+                'surface': surface,
+                'tokens': [token],
+                'pos': new_pos
+            })
+            i += 1
+            continue
+
+        # Default Rule (その他)
         chunks.append({
             'surface': token['surface'],
             'tokens': [token],
-            'pos': pos
+            'pos': pos_major # その他の品詞はそのまま (例: '記号')
         })
         i += 1
-    return chunks
-
-def combine_chunks(chunks):
-    while True:
-        did_combine = False
-        new_chunks = []
-        i = 0
-        while i < len(chunks):
-            # Rule A: Noun Phrase + Attributive Particle ('の') + Noun Phrase
-            if i + 2 < len(chunks) and \
-               chunks[i]['pos'] in ['名詞句', '名詞'] and \
-               chunks[i+1]['pos'] == '助詞' and len(chunks[i+1]['tokens']) == 1 and chunks[i+1]['tokens'][0]['part_of_speech'].split(',')[1] == '連体化' and \
-               chunks[i+2]['pos'] in ['名詞句', '名詞']:
-                
-                combined_tokens = chunks[i]['tokens'] + chunks[i+1]['tokens'] + chunks[i+2]['tokens']
-                new_chunk = {
-                    'surface': "".join([t['surface'] for t in combined_tokens]),
-                    'tokens': combined_tokens,
-                    'pos': '名詞句'  # Result is a noun phrase
-                }
-                new_chunks.append(new_chunk)
-                i += 3
-                did_combine = True
-                continue
-
-            # Rule B: Modifier + Modified
-            if i + 1 < len(chunks) and \
-               chunks[i]['pos'] in ['形容詞', '連体詞', '副詞', '形容動詞'] and \
-               chunks[i+1]['pos'] in ['名詞句', '動詞句', '形容詞', '名詞']:
-                
-                combined_tokens = chunks[i]['tokens'] + chunks[i+1]['tokens']
-                new_chunk = {
-                    'surface': "".join([t['surface'] for t in combined_tokens]),
-                    'tokens': combined_tokens,
-                    'pos': chunks[i+1]['pos']  # Inherit POS from the modified chunk
-                }
-                new_chunks.append(new_chunk)
-                i += 2
-                did_combine = True
-                continue
-
-                i += 3
-                did_combine = True
-                continue
-
-            # Rule I: Verb Phrase + Connective Particle + Verb Phrase (Moved Up)
-            if i + 2 < len(chunks) and \
-               chunks[i]['pos'] == '動詞句' and \
-               chunks[i+1]['pos'] == '助詞' and len(chunks[i+1]['tokens']) == 1 and chunks[i+1]['tokens'][0]['part_of_speech'].split(',')[1] == '接続助詞' and \
-               chunks[i+2]['pos'] == '動詞句':
-                
-                combined_tokens = chunks[i]['tokens'] + chunks[i+1]['tokens'] + chunks[i+2]['tokens']
-                new_chunk = {
-                    'surface': "".join([t['surface'] for t in combined_tokens]),
-                    'tokens': combined_tokens,
-                    'pos': '動詞句'  # Result is a longer verb phrase
-                }
-                new_chunks.append(new_chunk)
-                i += 3
-                did_combine = True
-                continue
-
-            # Rule C: Noun Phrase + を + Verb Phrase
-            if i + 2 < len(chunks) and \
-               chunks[i]['pos'] in ['名詞句', '名詞'] and \
-               chunks[i+1]['surface'] == 'を' and chunks[i+1]['pos'] == '助詞' and \
-               chunks[i+2]['pos'] == '動詞句':
-                
-                combined_tokens = chunks[i]['tokens'] + chunks[i+1]['tokens'] + chunks[i+2]['tokens']
-
-            # Rule D: Noun Phrase + が/は + Adjective/Adjectival Verb
-            if i + 2 < len(chunks) and \
-               chunks[i]['pos'] in ['名詞句', '名詞'] and \
-               chunks[i+1]['pos'] == '助詞' and chunks[i+1]['surface'] in ['が', 'は'] and \
-               chunks[i+2]['pos'] in ['形容詞', '形容動詞']:
-                
-                combined_tokens = chunks[i]['tokens'] + chunks[i+1]['tokens'] + chunks[i+2]['tokens']
-                new_chunk = {
-                    'surface': "".join([t['surface'] for t in combined_tokens]),
-                    'tokens': combined_tokens,
-                    'pos': chunks[i+2]['pos'] + '句' # Result is an adjectival phrase
-                }
-                new_chunks.append(new_chunk)
-                i += 3
-                did_combine = True
-                continue
-
-            # Rule E: Parallel Structures (A and B, A or B)
-            if i + 2 < len(chunks) and \
-               chunks[i+1]['pos'] == '助詞' and len(chunks[i+1]['tokens']) == 1 and chunks[i+1]['tokens'][0]['part_of_speech'].split(',')[1] == '並立助詞':
-                
-                pos_a = chunks[i]['pos']
-                pos_b = chunks[i+2]['pos']
-                
-                is_noun_pair = (pos_a in ['名詞', '名詞句'] and pos_b in ['名詞', '名詞句'])
-                
-                if is_noun_pair or (pos_a == pos_b):
-                    combined_tokens = chunks[i]['tokens'] + chunks[i+1]['tokens'] + chunks[i+2]['tokens']
-                    new_chunk = {
-                        'surface': "".join([t['surface'] for t in combined_tokens]),
-                        'tokens': combined_tokens,
-                        'pos': pos_a # Inherit POS from the first chunk
-                    }
-                    new_chunks.append(new_chunk)
-                    i += 3
-                    did_combine = True
-                    continue
-
-            # Rule F: Cause/Reason (A kara/node B)
-            if i + 2 < len(chunks) and \
-               chunks[i+1]['pos'] == '助詞' and chunks[i+1]['surface'] in ['ので', 'から']:
-                
-                pos_a = chunks[i]['pos']
-                pos_b = chunks[i+2]['pos']
-
-                if pos_a not in ['助詞', '記号'] and pos_b not in ['助詞', '記号']:
-                    combined_tokens = chunks[i]['tokens'] + chunks[i+1]['tokens'] + chunks[i+2]['tokens']
-                    new_chunk = {
-                        'surface': "".join([t['surface'] for t in combined_tokens]),
-                        'tokens': combined_tokens,
-                        'pos': pos_b # Inherit POS from the second chunk (the result)
-                    }
-                    new_chunks.append(new_chunk)
-                    i += 3
-                    did_combine = True
-                    continue
-
-            # Rule G: Verb Phrase modifying a Noun Phrase
-            if i + 1 < len(chunks) and \
-               chunks[i]['pos'] == '動詞句' and \
-               chunks[i+1]['pos'] in ['名詞句', '名詞']:
-                
-                last_token_in_verb_phrase = chunks[i]['tokens'][-1]
-                # The actual verb is the last token before any auxiliary verbs
-                verb_token = None
-                for t in reversed(chunks[i]['tokens']):
-                    if t['part_of_speech'].split(',')[0] == '動詞':
-                        verb_token = t
-                        break
-                
-                if verb_token and verb_token['infl_form'] in ['基本形', '連体形']:
-                    combined_tokens = chunks[i]['tokens'] + chunks[i+1]['tokens']
-                    new_chunk = {
-                        'surface': "".join([t['surface'] for t in combined_tokens]),
-                        'tokens': combined_tokens,
-                        'pos': '名詞句' # The result is a qualified noun phrase
-                    }
-                    new_chunks.append(new_chunk)
-                    i += 2
-                    did_combine = True
-                    continue
-
-            # Rule H: Verb Phrase ending with Auxiliary Verb modifying a Noun Phrase
-            if i + 1 < len(chunks) and \
-               chunks[i]['pos'] == '動詞句' and \
-               chunks[i+1]['pos'] in ['名詞句', '名詞']:
-                
-                last_token_in_verb_phrase = chunks[i]['tokens'][-1]
-                
-                # Check if the last token of the verb phrase is an auxiliary verb
-                if last_token_in_verb_phrase['part_of_speech'].split(',')[0] == '助動詞':
-                    combined_tokens = chunks[i]['tokens'] + chunks[i+1]['tokens']
-                    new_chunk = {
-                        'surface': "".join([t['surface'] for t in combined_tokens]),
-                        'tokens': combined_tokens,
-                        'pos': '名詞句' # The result is a qualified noun phrase
-                    }
-                    new_chunks.append(new_chunk)
-                    i += 2
-                    did_combine = True
-                    continue
-
-            # Rule I: Verb Phrase + Connective Particle + Verb Phrase
-            if i + 2 < len(chunks) and \
-               chunks[i]['pos'] == '動詞句' and \
-               chunks[i+1]['pos'] == '助詞' and len(chunks[i+1]['tokens']) == 1 and chunks[i+1]['tokens'][0]['part_of_speech'].split(',')[1] == '接続助詞' and \
-               chunks[i+2]['pos'] == '動詞句':
-                
-                combined_tokens = chunks[i]['tokens'] + chunks[i+1]['tokens'] + chunks[i+2]['tokens']
-                new_chunk = {
-                    'surface': "".join([t['surface'] for t in combined_tokens]),
-                    'tokens': combined_tokens,
-                    'pos': '動詞句'  # Result is a longer verb phrase
-                }
-                new_chunks.append(new_chunk)
-                i += 3
-                did_combine = True
-                continue
-
-            # No combination, add the current chunk and move on
-            new_chunks.append(chunks[i])
-            i += 1
-        
-        chunks = new_chunks
-        if not did_combine:
-            break
-            
     return chunks
 
 def cleanup_keywords(keywords_to_clean, chunk_info_dict):
@@ -354,7 +288,7 @@ def cleanup_keywords(keywords_to_clean, chunk_info_dict):
         if len(kw) <= 2 and kw in chunk_info_dict:
             is_single_noun_only = True
             for chunk_pos in chunk_info_dict[kw]:
-                if chunk_pos != '名詞':
+                if chunk_pos != 'NP': # Updated from '名詞' to 'NP'
                     is_single_noun_only = False
                     break
             if is_single_noun_only:
@@ -390,20 +324,35 @@ for data in transcripts_data.values():
 print(f"Extracted {len(katakana_keywords)} unique Katakana keywords.")
 print(f"Extracted {len(english_keywords)} unique English keywords.")
 
-# 3. Generate keywords from tokens using chunking method
-all_generated_chunks = defaultdict(set)
-for filename, tokens in all_tokens.items():
-    base_chunks = create_base_chunks(tokens)
-    # Add base chunks
-    for chunk in base_chunks:
-        if len(chunk['surface']) > 1:
-             all_generated_chunks[chunk['surface']].add(chunk['pos'])
+# 3. Generate keywords from tokens using the new ShiftReduceParser
+print("Generating keywords using Shift-Reduce Parser...")
 
-    combined_chunks = combine_chunks(base_chunks)
-    # Add combined chunks
-    for chunk in combined_chunks:
-        if len(chunk['surface']) > 1:
-             all_generated_chunks[chunk['surface']].add(chunk['pos'])
+file_counter = 0 # デバッグ用カウンタ
+
+all_generated_chunks = defaultdict(set)
+
+for filename, tokens in all_tokens.items():
+    debug_this_file = False # 最初の1ファイルだけデバッグモード
+    parser = ShiftReduceParser(debug_mode=debug_this_file)
+    file_counter += 1
+
+    base_chunks = create_base_chunks(tokens)
+    if debug_this_file:
+        print(f"--- Base Chunks for {filename} ---")
+        for chunk in base_chunks:
+            print(f"  Surface: '{chunk['surface']}', POS: '{chunk['pos']}'")
+        print(f"--- End Base Chunks ---")
+    
+    # パーサーで構文解析を実行
+    final_stack = parser.parse(base_chunks)
+
+    # 最終スタック内のすべてのチャンクからキーワード候補を収集
+    for chunk in final_stack:
+        all_sub_chunks = parser._collect_chunks_from_tree(chunk)
+        for sub_chunk in all_sub_chunks:
+            # 意味のある句（NP, VP, ADJP）のみをキーワード候補とする
+            if sub_chunk.get('pos') in ['NP', 'VP', 'ADJP'] and len(sub_chunk['surface']) > 1:
+                all_generated_chunks[sub_chunk['surface']].add(sub_chunk['pos'])
 
 print(f"Generated {len(all_generated_chunks)} unique keyword surfaces from tokens.")
 
