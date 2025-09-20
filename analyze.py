@@ -11,7 +11,7 @@ from janome.tokenizer import Tokenizer
 # Define paths
 transcript_pattern = "transcripts/*.txt.md"
 keywords_file = "keywords.json"
-output_dir = "public"
+output_dir = "docs"
 cache_file = "janome_cache.json"
 
 
