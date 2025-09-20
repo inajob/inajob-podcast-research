@@ -116,6 +116,25 @@ class ShiftReduceParser:
                 collected.extend(self._collect_chunks_from_tree(child))
         return collected
 
+    def _contains_noun(self, chunk):
+        if not chunk:
+            return False
+
+        # If it's a base chunk (from create_base_chunks), check its tokens
+        if 'tokens' in chunk:
+            for token in chunk['tokens']:
+                pos_major = token['part_of_speech'].split(',')[0]
+                if pos_major == '名詞':
+                    return True
+        
+        # If it's a combined chunk, recursively check its children
+        if 'children' in chunk:
+            for child in chunk['children']:
+                if self._contains_noun(child):
+                    return True
+        
+        return False
+
 # --- Caching Setup ---
 try:
     with open(cache_file, 'r', encoding='utf-8') as f:
@@ -279,28 +298,7 @@ def create_base_chunks(tokens):
         i += 1
     return chunks
 
-def cleanup_keywords(keywords_to_clean, chunk_info_dict):
-    print("Cleaning up short keywords...")
-    cleaned_keywords = set()
-    removed_count = 0
-    for kw in keywords_to_clean:
-        is_short_single_noun = False
-        if len(kw) <= 2 and kw in chunk_info_dict:
-            is_single_noun_only = True
-            for chunk_pos in chunk_info_dict[kw]:
-                if chunk_pos != 'NP': # Updated from '名詞' to 'NP'
-                    is_single_noun_only = False
-                    break
-            if is_single_noun_only:
-                is_short_single_noun = True
-        
-        if not is_short_single_noun:
-            cleaned_keywords.add(kw)
-        else:
-            removed_count += 1
-            
-    print(f"Removed {removed_count} short single-noun keywords.")
-    return cleaned_keywords
+
 
 # 1. Load keywords from JSON file
 json_keywords = set()
@@ -329,7 +327,7 @@ print("Generating keywords using Shift-Reduce Parser...")
 
 file_counter = 0 # デバッグ用カウンタ
 
-all_generated_chunks = defaultdict(set)
+generated_keywords_with_nouns = set()
 
 for filename, tokens in all_tokens.items():
     debug_this_file = False # 最初の1ファイルだけデバッグモード
@@ -351,13 +349,14 @@ for filename, tokens in all_tokens.items():
         all_sub_chunks = parser._collect_chunks_from_tree(chunk)
         for sub_chunk in all_sub_chunks:
             # 意味のある句（NP, VP, ADJP）のみをキーワード候補とする
-            if sub_chunk.get('pos') in ['NP', 'VP', 'ADJP'] and len(sub_chunk['surface']) > 1:
-                all_generated_chunks[sub_chunk['surface']].add(sub_chunk['pos'])
+            if sub_chunk.get('pos') in ['NP', 'VP', 'ADJP'] and len(sub_chunk['surface']) >= 3:
+                if parser._contains_noun(sub_chunk):
+                    generated_keywords_with_nouns.add(sub_chunk['surface'])
 
-print(f"Generated {len(all_generated_chunks)} unique keyword surfaces from tokens.")
+print(f"Generated {len(generated_keywords_with_nouns)} unique keyword surfaces from tokens.")
 
 # 4. Combine all keyword sources
-all_keywords = json_keywords.union(katakana_keywords).union(english_keywords).union(all_generated_chunks.keys())
+all_keywords = json_keywords.union(katakana_keywords).union(english_keywords).union(generated_keywords_with_nouns)
 print(f"Total unique keyword candidates: {len(all_keywords)}")
 
 
@@ -406,7 +405,7 @@ start_time_ss = time.time()
 
 keyword_set = set(frequent_keywords_map.keys())
 keywords_to_remove = set()
-similarity_threshold_episodes = total_episode_count * 0.05 
+similarity_threshold_episodes = total_episode_count * 0.04 
 
 sorted_keywords = sorted(list(keyword_set), key=len, reverse=True)
 
@@ -441,7 +440,7 @@ end_time_ss = time.time()
 print(f"Finished substring filter. Duration: {end_time_ss - start_time_ss:.2f} seconds")
 
 # 3. --- Final Cleanup: Remove short, non-compound nouns ---
-final_keywords = cleanup_keywords(final_keywords_after_substring, all_generated_chunks)
+final_keywords = final_keywords_after_substring
 
 print(f"Total keywords after all filters: {len(final_keywords)}")
 

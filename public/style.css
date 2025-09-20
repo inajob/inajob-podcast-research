@@ -245,3 +245,24 @@ header h1 {
     max-width: 300px;
     pointer-events: none; /* So the tooltip itself doesn't block mouse events */
 }
+
+.result-block {
+    margin-bottom: 10px; /* Space between different result blocks for the same episode */
+    padding: 5px 0;
+    border-left: 3px solid #eee; /* A subtle border to group context lines */
+    padding-left: 10px;
+}
+
+.line-context {
+    color: #888; /* Lighter color for context lines */
+    font-size: 0.85em; /* Slightly smaller font size */
+    padding-left: 5px; /* Indent context lines a bit */
+}
+
+.line-context.before {
+    margin-bottom: 2px;
+}
+
+.line-context.after {
+    margin-top: 2px;
+}

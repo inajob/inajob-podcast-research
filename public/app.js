@@ -229,7 +229,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function highlightEpisodes(episodesToHighlight, title) {
         clearHighlights();
-        selectedKeywordEl.textContent = title || 'Search Result';
+        selectedKeywordEl.textContent = 'None';
 
         document.querySelectorAll('#episode-list li').forEach(li => {
             if (episodesToHighlight.includes(li.dataset.episode)) {
@@ -256,11 +256,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const lines = transcript.content.split('\n');
             lines.forEach((line, i) => {
                 if (line.includes(keyword)) {
+                    const beforeLine = i > 0 ? lines[i - 1].trim() : null;
+                    const afterLine = i < lines.length - 1 ? lines[i + 1].trim() : null;
                     results.push({
                         episodeFile: filename,
                         episodeTitle: transcript.title, 
                         line: line.trim(),
-                        lineNumber: i + 1
+                        lineNumber: i + 1,
+                        beforeLine: beforeLine,
+                        afterLine: afterLine
                     });
                 }
             });
@@ -287,13 +291,13 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!groupedResults.has(result.episodeTitle)) {
                 groupedResults.set(result.episodeTitle, []);
             }
-            groupedResults.get(result.episodeTitle).push(result.line);
+            groupedResults.get(result.episodeTitle).push(result); // Changed from result.line to result
         });
 
         const escapeRegExp = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const keywordRegex = new RegExp(escapeRegExp(keyword), 'g');
 
-        groupedResults.forEach((lines, episodeTitle) => {
+        groupedResults.forEach((episodeResults, episodeTitle) => { // Changed from (lines, episodeTitle) to (episodeResults, episodeTitle)
             const item = document.createElement('div');
             item.className = 'result-item';
 
@@ -302,11 +306,29 @@ document.addEventListener('DOMContentLoaded', () => {
             titleEl.textContent = episodeTitle;
             item.appendChild(titleEl);
 
-            lines.forEach(line => {
+            episodeResults.forEach(result => { // Changed from lines.forEach(line => to episodeResults.forEach(result =>
+                const resultBlock = document.createElement('div');
+                resultBlock.className = 'result-block';
+
+                if (result.beforeLine) {
+                    const beforeEl = document.createElement('div');
+                    beforeEl.className = 'line-context before';
+                    beforeEl.textContent = result.beforeLine;
+                    resultBlock.appendChild(beforeEl);
+                }
+
                 const contentEl = document.createElement('div');
                 contentEl.className = 'line-content';
-                contentEl.innerHTML = line.replace(keywordRegex, `<span class="highlight-text">${keyword}</span>`);
-                item.appendChild(contentEl);
+                contentEl.innerHTML = result.line.replace(keywordRegex, `<span class="highlight-text">${keyword}</span>`);
+                resultBlock.appendChild(contentEl);
+
+                if (result.afterLine) {
+                    const afterEl = document.createElement('div');
+                    afterEl.className = 'line-context after';
+                    afterEl.textContent = result.afterLine;
+                    resultBlock.appendChild(afterEl);
+                }
+                item.appendChild(resultBlock);
             });
 
             resultsContainer.appendChild(item);
@@ -366,7 +388,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const keywordsAttr = event.target.dataset.keywords;
             if (keywordsAttr) {
                 const keywordsList = keywordsAttr.split(',');
-                tooltipEl.innerHTML = keywordsList.join('<br>');
+                const formattedKeywords = keywordsList.map(kw => {
+                    const episodeCount = keywords[kw] ? keywords[kw].length : 0;
+                    return `${kw} (${episodeCount})`;
+                });
+                tooltipEl.innerHTML = formattedKeywords.join('<br>');
                 tooltipEl.classList.remove('hidden');
 
                 // Position the tooltip below the keyword
