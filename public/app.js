@@ -185,7 +185,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const episodeData = transcripts[episodeName];
         if (episodeData) {
             episodeTitleEl.textContent = episodeData.title;
-            highlightKeywordsInTranscript(episodeData.content);
+            transcriptContentEl.innerHTML = highlightKeywordsInTranscript(episodeData.content, null, episodeName);
         } else {
             episodeTitleEl.textContent = episodeName;
             transcriptContentEl.textContent = 'Transcript not found.';
@@ -297,7 +297,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const escapeRegExp = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const keywordRegex = new RegExp(escapeRegExp(keyword), 'g');
 
-        groupedResults.forEach((episodeResults, episodeTitle) => { // Changed from (lines, episodeTitle) to (episodeResults, episodeTitle)
+        groupedResults.forEach((episodeResults, episodeTitle) => {
             const item = document.createElement('div');
             item.className = 'result-item';
 
@@ -306,26 +306,27 @@ document.addEventListener('DOMContentLoaded', () => {
             titleEl.textContent = episodeTitle;
             item.appendChild(titleEl);
 
-            episodeResults.forEach(result => { // Changed from lines.forEach(line => to episodeResults.forEach(result =>
+            episodeResults.forEach(result => {
                 const resultBlock = document.createElement('div');
                 resultBlock.className = 'result-block';
 
                 if (result.beforeLine) {
                     const beforeEl = document.createElement('div');
                     beforeEl.className = 'line-context before';
-                    beforeEl.textContent = result.beforeLine;
+                    beforeEl.innerHTML = highlightKeywordsInTranscript(result.beforeLine, null, result.episodeFile);
                     resultBlock.appendChild(beforeEl);
                 }
 
                 const contentEl = document.createElement('div');
                 contentEl.className = 'line-content';
-                contentEl.innerHTML = result.line.replace(keywordRegex, `<span class="highlight-text">${keyword}</span>`);
+                let highlightedMatchedLine = highlightKeywordsInTranscript(result.line, keyword, result.episodeFile);
+                contentEl.innerHTML = highlightedMatchedLine;
                 resultBlock.appendChild(contentEl);
 
                 if (result.afterLine) {
                     const afterEl = document.createElement('div');
                     afterEl.className = 'line-context after';
-                    afterEl.textContent = result.afterLine;
+                    afterEl.innerHTML = highlightKeywordsInTranscript(result.afterLine, null, result.episodeFile);
                     resultBlock.appendChild(afterEl);
                 }
                 item.appendChild(resultBlock);
@@ -342,29 +343,53 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('.grid-cell.highlight').forEach(cell => cell.classList.remove('highlight'));
     }
 
-    function highlightKeywordsInTranscript(content) {
-        const allKeywords = Object.keys(keywords);
-        allKeywords.sort((a, b) => b.length - a.length);
 
-        if (allKeywords.length === 0) {
-            transcriptContentEl.textContent = content;
-            return;
+
+
+
+
+
+    function highlightKeywordsInTranscript(content, searchedKeyword = null, episodeFile = null) {
+        let keywordsToConsider = Object.keys(keywords);
+        if (episodeFile && episodes[episodeFile]) {
+            // Only consider keywords that are known to be in this episode
+            keywordsToConsider = episodes[episodeFile];
         }
 
-        const keywordsRegex = new RegExp(`(${allKeywords.map(kw => kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'g');
+        keywordsToConsider.sort((a, b) => b.length - a.length);
+
+        if (keywordsToConsider.length === 0) {
+            return content;
+        }
+
+        const keywordsRegex = new RegExp(`(${keywordsToConsider.map(kw => kw.replace(/[.*+?^${}()|[\]\\]/g, '\\    // Event delegation for clicking on highlighted keywords in the transcript')).join('|')})`, 'g');
         
         const highlightedContent = content.replace(keywordsRegex, (match) => {
             // Find all keywords that are part of the matched string
-            const matchingKeywords = allKeywords.filter(kw => match.includes(kw));
+            const matchingKeywords = keywordsToConsider.filter(kw => match.includes(kw));
             // The longest one will be the first due to the initial sort
-            return `<span class="transcript-keyword" data-keywords="${matchingKeywords.join(',')}">${match}</span>`;
+            let classes = ['transcript-keyword'];
+            if (match === searchedKeyword) {
+                classes.push('highlight-text'); // Use highlight-text for searched keyword
+            }
+            return `<span class="${classes.join(' ')}" data-keywords="${matchingKeywords.join(',')}">${match}</span>`;
         });
 
-        transcriptContentEl.innerHTML = highlightedContent;
+        return highlightedContent;
     }
 
     // Event delegation for clicking on highlighted keywords in the transcript
     transcriptContentEl.addEventListener('click', (event) => {
+        if (event.target.classList.contains('transcript-keyword')) {
+            const keywordsAttr = event.target.dataset.keywords;
+            if (keywordsAttr) {
+                const longestKeyword = keywordsAttr.split(',')[0];
+                handleKeywordClick(longestKeyword);
+            }
+        }
+    });
+
+    document.getElementById('free-text-search-results').addEventListener('click', (event) => {
         if (event.target.classList.contains('transcript-keyword')) {
             const keywordsAttr = event.target.dataset.keywords;
             if (keywordsAttr) {
@@ -384,6 +409,26 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     transcriptContentEl.addEventListener('mouseover', (event) => {
+        if (event.target.classList.contains('transcript-keyword') || event.target.classList.contains('highlight-text')) {
+            const keywordsAttr = event.target.dataset.keywords;
+            if (keywordsAttr) {
+                const keywordsList = keywordsAttr.split(',');
+                const formattedKeywords = keywordsList.map(kw => {
+                    const episodeCount = keywords[kw] ? keywords[kw].length : 0;
+                    return `${kw} (${episodeCount})`;
+                });
+                tooltipEl.innerHTML = formattedKeywords.join('<br>');
+                tooltipEl.classList.remove('hidden');
+
+                // Position the tooltip below the keyword
+                const rect = event.target.getBoundingClientRect();
+                tooltipEl.style.left = `${window.scrollX + rect.left}px`;
+                tooltipEl.style.top = `${window.scrollY + rect.bottom + 5}px`;
+            }
+        }
+    });
+
+    document.getElementById('free-text-search-results').addEventListener('mouseover', (event) => {
         if (event.target.classList.contains('transcript-keyword')) {
             const keywordsAttr = event.target.dataset.keywords;
             if (keywordsAttr) {
@@ -404,6 +449,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     transcriptContentEl.addEventListener('mouseout', (event) => {
+        if (event.target.classList.contains('transcript-keyword') || event.target.classList.contains('highlight-text')) {
+            tooltipEl.classList.add('hidden');
+        }
+    });
+
+    document.getElementById('free-text-search-results').addEventListener('mouseout', (event) => {
         if (event.target.classList.contains('transcript-keyword')) {
             tooltipEl.classList.add('hidden');
         }
